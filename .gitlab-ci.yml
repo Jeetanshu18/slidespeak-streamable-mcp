@@ -1,0 +1,106 @@
+stages:
+  - setup
+  - build
+  - notify_build
+  - deploy
+  - notify_final
+
+setup:
+  stage: setup
+  image: google/cloud-sdk
+  variables:
+    GOOGLE_SERVICE_KEY: $SERVICE_ACCOUNT_KEY
+  script:
+    - mkdir -p files
+    - echo "$GOOGLE_SERVICE_KEY" > service-account-key.json
+    - gcloud auth activate-service-account --key-file=service-account-key.json --project=${PROJECT_ID}
+    - gcloud auth print-access-token > files/gcloud_token
+  artifacts:
+    untracked: false
+    when: on_success
+    expire_in: 1 hr
+    paths:
+      - files
+  only:
+    - dev
+
+build:
+  stage: build
+  image: docker:latest
+  tags:
+    - self-hosted
+
+  services:
+    - docker:dind
+  dependencies:
+    - setup
+  variables:
+    DOCKER_BUILDKIT: "1"
+    GOOGLE_SERVICE_KEY: $SERVICE_ACCOUNT_KEY
+    GAR_HOSTNAME: "us-central1-docker.pkg.dev"
+    PROJECT_ID: "$PROJECT_ID"
+    REPOSITORY: "$REPOSITORY"
+    IMAGE_NAME: "$CI_PROJECT_NAME"
+    REPO_URL: $REPO_URL
+
+  before_script:
+    - cat files/gcloud_token | docker login -u oauth2accesstoken --password-stdin https://us-central1-docker.pkg.dev
+    - cat "$ENV_FILE_CONTENT" > .env
+  script:
+    - |
+      docker build \
+        -t "us-central1-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}" .
+    - docker push "us-central1-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}"
+  only:
+    - dev
+
+slack_notification_build:
+  stage: notify_build
+  image: curlimages/curl:7.86.0
+  script:
+    - |
+      MESSAGE="Build failed: $CI_COMMIT_REF_NAME $CI_PIPELINE_URL"
+    - |
+      curl -H "Content-type: application/json" --data '{"channel": "ruh-cicd","text": "'"${MESSAGE}"'"}' -X POST ${SLACK_WEBHOOK_SECRET}
+    - exit 1
+  only:
+    - qa
+    - dev
+    - prod
+  when: on_failure
+
+deploy:
+  stage: deploy
+  image: google/cloud-sdk:latest
+  variables:
+    GOOGLE_SERVICE_KEY: $SERVICE_ACCOUNT_KEY
+    GAR_HOSTNAME: "us-central1-docker.pkg.dev"
+    PROJECT_ID: "$PROJECT_ID"
+    REPOSITORY: "$REPOSITORY"
+    IMAGE_NAME: "$CI_PROJECT_NAME"
+  script:
+    - echo "$GOOGLE_SERVICE_KEY" > service-account-key.json # Save the service account key to a file
+    - gcloud auth activate-service-account --key-file=service-account-key.json --project=${PROJECT_ID}
+    # - gcloud container clusters get-credentials ${CLUSTER_NAME} --region ${REGION} --project ${PROJECT_ID}
+    # - kubectl set image deployment/ruh-user-fe-ai-dp ruh-user-fe-ai=us-central1-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:$CI_COMMIT_REF_NAME-$CI_COMMIT_SHORT_SHA  -n ruh-$CI_COMMIT_REF_NAME
+    # - echo "Successfully deployed to GKE"
+    - gcloud run deploy $IMAGE_NAME-$CI_COMMIT_REF_NAME --image $REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:$CI_COMMIT_REF_NAME-$CI_COMMIT_SHORT_SHA --region=${REGION} --platform managed --allow-unauthenticated --port 5001 --memory '512Mi' --cpu '1' --min-instances '0'
+  after_script:
+    - |
+      if [ "$CI_JOB_STATUS" = "success" ]; then
+        STATUS_EMOJI="✅"
+        STATUS_TEXT="succeeded"
+      else
+        STATUS_EMOJI="❌"
+        STATUS_TEXT="failed"
+      fi
+      echo "CI_JOB_STATUS: $CI_JOB_STATUS"
+      echo "CI_PIPELINE_URL: $CI_PIPELINE_URL"
+
+      curl -X POST -H 'Content-type: application/json' \
+        --data "{\"channel\":\"ruh-cicd\",\"text\":\"${STATUS_EMOJI} Pipeline ${STATUS_TEXT}! Stage: $CI_JOB_STAGE. Check the logs: $CI_PIPELINE_URL\"}" \
+        $SLACK_WEBHOOK_SECRET
+  dependencies:
+    - build
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "dev" || $CI_COMMIT_REF_NAME == "qa" || $CI_COMMIT_REF_NAME == "uat"

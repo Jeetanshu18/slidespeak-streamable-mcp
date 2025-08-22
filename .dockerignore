@@ -1,0 +1,6 @@
+# Ignore the local virtual environment
+.venv
+# Ignore common Python cache folders
+__pycache__
+*.pyc
+# (Optional) Ignore other files or folders not needed in the final image

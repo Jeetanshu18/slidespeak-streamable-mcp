@@ -1,0 +1,42 @@
+# Python-generated files
+__pycache__
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+__pypackages__/
+*.pyc
+*.py[oc]
+
+# Virtual environments
+.venv
+venv/
+.venv/
+.env
+.env/
+.cache
+.cache/
+dist
+dist/
+
+# Build and distribution
+build/
+dist/
+wheels/
+.aider*
+
+# Google API credentials and tokens
+credentials.json
+token.json
+
+# Exported documents
+document_*.pdf
+document_*.docx
+document_*.odt
+document_*.rtf
+document_*.txt
+document_*.html
+
+# macOS files
+.DS_Store
+.DS_Store/
