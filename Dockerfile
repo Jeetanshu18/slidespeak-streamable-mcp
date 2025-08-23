@@ -27,8 +27,8 @@ ENV UV_LINK_MODE=copy
 # Then, add the rest of the project source code and install it
 # Installing separately from its dependencies allows optimal layer caching
 ADD . /app
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable
+# RUN --mount=type=cache,target=/root/.cache/uv \
+#     uv sync --frozen --no-dev --no-editable
 
 # Ensure /root/.local exists
 RUN mkdir -p /root/.local
@@ -54,9 +54,9 @@ COPY --from=uv --chown=app:app /app/.env /app/.env
 ENV PATH="/app/.venv/bin:$PATH"
 
 ENV HOST=0.0.0.0
-ENV PORT=5001
+ENV PORT=8000
 
-EXPOSE 5001
+EXPOSE 8000
 
 # when running the container, add --db-path and a bind mount to the host's db file
 #ENTRYPOINT ["sendgrid-mcp"]
