@@ -51,7 +51,7 @@ COPY --from=uv /app/.venv /app/.venv
 # Copy application code
 COPY --from=uv /app/src /app/src
 COPY --from=uv /app/pyproject.toml /app/pyproject.toml
-COPY --from=uv /app/.env /app/.env
+# COPY --from=uv /app/.env /app/.env
 
 # Add venv executables to PATH
 ENV PATH="/app/.venv/bin:$PATH"
